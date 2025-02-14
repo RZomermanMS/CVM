@@ -17,7 +17,7 @@ If ($Type -eq "KeyVault"){
             $status=($keyvault | select ProvisioningState).ProvisioningState
             If ($status -eq "Provisioning") {
                 Write-host " still being provisioned, please wait for it to complete" -foregroundcolor orange
-                $confirmation = Read-Host "Press CRTL-X to cancel this script"
+                $confirmation = Read-Host "Press CTRL-C to cancel this script"
             } else {
                 Write-Host " and provisioned" -foregroundcolor Green -NoNewline
                 
@@ -69,7 +69,7 @@ Function ActivateMHSM($akvname){
         Write-host " and activated" -ForegroundColor Green
     }else{
         Write-host "Managed HSM status unkown" -ForegroundColor Red
-        Read-Host -Prompt "Press CRTL-X to exit"
+        Read-Host -Prompt "Press CTRL-C to exit"
     }
 }
 
@@ -83,7 +83,7 @@ Function CreateDiskEncryptionSet($keyName,$KeyID,$region,$resgrp,$desname, $akvn
         $SourceVaultName= ($SourceVault.id -split "/")[$_.count -1]
         If (!($SourceVaultName -eq $akvname -and $SourceKeyName -eq $keyName)){
             write-host " - key is different!" -ForegroundColor Red
-            Read-Host -Prompt "Press CRTL-X to exit"
+            Read-Host -Prompt "Press CTRL-C to exit"
         }else{
             write-host " - OK" -ForegroundColor Green
         }
@@ -185,7 +185,16 @@ Function ValidateKey($akvname,$Type,$ownername, $keyname){
 
     #validating if a key already exists
     if ($key=Get-AzKeyVaultKey -HsmName $akvname -Name $keyname) {
-        Write-Host "Key exists"
+        Write-Host "Key exists - " -ForegroundColor Green -NoNewline
+        Write-host "validating" -noNewLine
+        if ($key.ReleasePolicy.PolicyContent){
+            Write-Host " - key has a release policy for: " -ForegroundColor Green -NoNewline
+            $keyPolicy=($key.ReleasePolicy.PolicyContent -split 'authority":"' -split '/"}')[1]
+            write-host $keyPolicy -ForegroundColor Cyan
+        }else{
+            Write-Host " - key does not have a release policy and cannot be used " -ForegroundColor red
+            Read-Host -Prompt "Press CRTL-C to exit"
+        }
         return $key
     }else{
         #generate new key
@@ -296,13 +305,13 @@ Function ValidateCVMOperator(){
             write-host " please run: " -ForegroundColor RED  -NoNewline
             write-host "Connect-Graph -Tenant 'your tenant ID' Application.ReadWrite.All" -ForegroundColor Yellow
             write-host "New-MgServicePrincipal -AppId bf7b6499-ff71-4aa2-97a4-f372087be7f0 -DisplayName 'Confidential VM Orchestrator'" -ForegroundColor Yellow
-            Read-Host -Prompt "Press CRTL-X to exit"
+            Read-Host -Prompt "Press CTRL-C to exit"
         }
         return $true
     }elseif($org.AppId -eq 'bf7b6499-ff71-4aa2-97a4-f372087be7f0'){
         return $true
     }else{
         write-host "Something is wrong with the Confidential VM Orchestrator app" -ForegroundColor Red
-        Read-Host -Prompt "Press CRTL-X to exit"
+        Read-Host -Prompt "Press CTRL-C to exit"
     }
 }
