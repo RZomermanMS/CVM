@@ -15,4 +15,9 @@ Many parameters are optional..
 -akvtype (KeyVault/MHSM) (autodetect is keyURL is used, else default MHSM)
 -vnetname (created if not specified based on $vmname+vnet)
 -subnetname (created if not specified based on $basename+vmsubnet)
-.\keyvault.ps1 -region uaenorth -vmSize Standard_DC2as_v5 -Creds $creds -resgrp MANAGEDHSM -vmname CVM032 -akvname mhsmrcz01 -akvtype MHSM -KeyURL "https://mhsmrcz01.managedhsm.azure.net:443/keys/MyKey2/9cd941aae5e24eaa02d8cd796634e3a2"
+
+Examples:
+.\keyvault.ps1 -region uaenorth -vmSize Standard_DC2as_v5 -Creds $creds -resgrp MANAGEDHSM -vmname CVM032 -akvname hsm001 -akvtype MHSM -KeyURL "https://hsm001.managedhsm.azure.net:443/keys/MyKey2/9cd941aae5e24eaa02d8cd796634e3a2"
+
+.\keyvault.ps1 -region uaenorth -vmSize Standard_DC2as_v5 -Creds $creds -resgrp MANAGEDHSM -vmname CVM032 -akvname hsm001 -akvtype MHSM -vnetname MYVNET -subnetname MySubnet
+
