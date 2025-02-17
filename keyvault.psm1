@@ -1,28 +1,61 @@
-Function CreateKeyVault($Type,$akvname,$region,$resgrp,$ownername){
+Function ValidateKeyVault($Type,$akvname,$region,$resgrp,$ownername){
 # Function to create a KeyVault or Managed HSM and returns the keyvault object
 # Create Key Vault
 If ($Type -eq "KeyVault"){
     #need to check if exists
-    $keyvault=New-AzKeyVault -Name $akvname -Location $region -ResourceGroupName $resgrp -Sku Premium -EnabledForDiskEncryption -DisableRbacAuthorization -SoftDeleteRetentionInDays 10 -EnablePurgeProtection;
-    return $keyvault
+    $Hostname=($akvname + ".vault.azure.net")
+    write-host "Validating KeyVault: "  -ForegroundColor Blue -NoNewline
+    write-host $Hostname -ForegroundColor Cyan
+        $result = Resolve-DnsName $Hostname -ErrorAction SilentlyContinue
+        if ($result) {
+            Write-Host "KeyVault Name already exists" -foregroundcolor Green -NoNewline
+            $keyvault=Get-AzKeyVault -Name $akvname 
+            if (!($keyvault)){
+                Write-Host "Cannot connect" -foregroundcolor Red
+                $confirmation = Read-Host "Press CTRL-C to cancel this script"
+            }elseif ($keyvault.SKU -ne "Premium"){
+                Write-Host "KeyVault is not a Premium SKU" -foregroundcolor Red
+                $confirmation = Read-Host "Press CTRL-C to cancel this script"
+            }elseif($keyvault.EnabledForDiskEncryption -ne $true){
+                Write-Host "KeyVault is not enabled for disk encryption" -foregroundcolor Red
+                $confirmation = Read-Host "Press CTRL-C to cancel this script"
+            }elseif($keyvault.EnablePurgeProtection -ne $true){
+                Write-Host "KeyVault does not have purge protection enabled - enabling" -foregroundcolor Yellow
+                Update-AzKeyVault -EnablePurgeProtection -Name $akvname -ResourceGroupName $resgrp
+            }else{
+                Write-Host " and available for use" -foregroundcolor Green
+                return $keyvault
+            }
+        } else {
+            Write-Host " KeyVault does not yet exist, " -NoNewline
+            write-Host "creating" -ForegroundColor Yellow
+            $keyvault=New-AzKeyVault -Name $akvname -Location $region -ResourceGroupName $resgrp -Sku Premium -EnabledForDiskEncryption -DisableRbacAuthorization -SoftDeleteRetentionInDays 10 -EnablePurgeProtection;
+            return $keyvault
+        }
 }elseif($Type -eq "MHSM"){
     # Try to resolve the hostname
     $Hostname=($akvname + ".managedhsm.azure.net")
     write-host "Validating Managed HSM: "  -ForegroundColor Blue -NoNewline
     write-host $Hostname -ForegroundColor Cyan
-        $result = [System.Net.Dns]::GetHostAddresses($Hostname)
+    $result = Resolve-DnsName $Hostname -ErrorAction SilentlyContinue
         if ($result) {
             Write-Host "Managed HSM name already exists" -foregroundcolor Green -NoNewline
             $keyvault=Get-AzKeyVaultManagedHsm -Name $akvname 
             $status=($keyvault | select ProvisioningState).ProvisioningState
-            If ($status -eq "Provisioning") {
+            if (!($status)){
+                Write-Host "Cannot connect" -foregroundcolor Red
+                $confirmation = Read-Host "Press CTRL-C to cancel this script"
+            }
+            elseif ($status -eq "Provisioning") {
                 Write-host " still being provisioned, please wait for it to complete" -foregroundcolor orange
                 $confirmation = Read-Host "Press CTRL-C to cancel this script"
-            } else {
+            } elseif ($status -eq "Succeeded") {
                 Write-Host " and provisioned" -foregroundcolor Green -NoNewline
-                
                 ActivateMHSM -akvname $akvname
                 return $keyvault
+            }else{
+                Write-Host "Cannot connect" -foregroundcolor Red
+                $confirmation = Read-Host "Press CTRL-C to cancel this script"
             }
             
         } else {
@@ -48,8 +81,6 @@ If ($Type -eq "KeyVault"){
             ActivateMHSM -akvname $akvname
             return $keyvault
         }
- 
-
     }
 }
 
@@ -90,8 +121,8 @@ Function CreateDiskEncryptionSet($keyName,$KeyID,$region,$resgrp,$desname, $akvn
         $diskEncryptionSetID=$diskEncryptionSet.id
         return $diskEncryptionSetID
     }else{
-        write-host "Validating new Disk Encryption Set: " -NoNewline -ForegroundColor Blue
-        write-host $desname -ForegroundColor Cyan
+        write-host "Validating new Disk Encryption Set " -NoNewline -ForegroundColor Blue
+        write-host "$desname" -ForegroundColor Cyan
       
         # Create Disk Encryption Set
         #creating new User Assigned Identity to access the key
@@ -103,22 +134,22 @@ Function CreateDiskEncryptionSet($keyName,$KeyID,$region,$resgrp,$desname, $akvn
             start-sleep -Seconds 5
         }
         #assigning permissions to the key:
-        write-host "- validating permissions on key for user: "  -NoNewline -ForegroundColor Blue
+        write-host "- validating permissions on key for user: "  -NoNewline
         write-host $identity.name -ForegroundColor Cyan
-        ValidateHSMRoles2 -akvname $akvname -identity $identity.ClientId -role "Managed HSM Crypto Service Encryption User" -scope ("/keys/" + $keyName)
-        ValidateHSMRoles2 -akvname $akvname -identity $identity.ClientId -role "Managed HSM Crypto User" -scope ("/keys/" + $keyName)
-        ValidateHSMRoles2 -akvname $akvname -identity $identity.ClientId -role "Managed HSM Crypto Service Release User" -scope ("/keys/" + $keyName)
-        
-    #NEED TO MAKE ADJUSTMENTS IN CASE THIS DOES NOT EXIST YET
-        $org=Get-AzADServicePrincipal -DisplayName "Confidential VM Orchestrator"
-        
-        write-host "- validating permissions on key for: " -NoNewline -ForegroundColor Blue
-        write-host $org.DisplayName -ForegroundColor Cyan
-        ValidateHSMRoles2 -akvname $akvname -identity $org.AppId -role "Managed HSM Crypto Service Release User" -scope ("/keys/" + $keyName)
+        if ($Type -eq "KeyVault"){
+            Set-AzKeyVaultAccessPolicy -VaultName $akvname -ResourceGroupName $resgrp -ObjectId $identity.PrincipalId -PermissionsToKeys wrapKey,unwrapKey,get -BypassObjectIdValidation;
+        }else{#ManagedHSM)
+            write-host "Setting permissions on key for Managed HSM"
+            ValidateHSMRoles2 -akvname $akvname -identity $identity.ClientId -role "Managed HSM Crypto Service Encryption User" -scope ("/keys/" + $keyName)
+            ValidateHSMRoles2 -akvname $akvname -identity $identity.ClientId -role "Managed HSM Crypto User" -scope ("/keys/" + $keyName)
+            ValidateHSMRoles2 -akvname $akvname -identity $identity.ClientId -role "Managed HSM Crypto Service Release User" -scope ("/keys/" + $keyName)
+            #NEED TO MAKE ADJUSTMENTS IN CASE THIS DOES NOT EXIST YET
+            $org=Get-AzADServicePrincipal -DisplayName "Confidential VM Orchestrator"
+            write-host "- validating permissions on key for: " -NoNewline -ForegroundColor Blue
+            write-host $org.DisplayName -ForegroundColor Cyan
+            ValidateHSMRoles2 -akvname $akvname -identity $org.AppId -role "Managed HSM Crypto Service Release User" -scope ("/keys/" + $keyName)
+        }
 
-        #New-AzKeyVaultRoleAssignment -HsmName $akvname -RoleName "Managed HSM Crypto Service Encryption User" -scope ("/keys/" + $keyName) -ObjectId $identity.ClientId
-        #New-AzKeyVaultRoleAssignment -HsmName $akvname -RoleName "Managed HSM Crypto User" -scope ("/keys/" + $keyName) -ObjectId $identity.ClientId
-        
         If ($Type -eq "KeyVault"){
             $keyvault = Get-AzKeyVault -Name $akvname
         }else{
@@ -134,7 +165,8 @@ Function CreateDiskEncryptionSet($keyName,$KeyID,$region,$resgrp,$desname, $akvn
         $userAssignedIdentities = @{$identity.id = @{}};
         write-host "- creating new disk encryption set config"
         $diskEncryptionSetConfig=New-AzDiskEncryptionSetConfig -Location $region -IdentityType UserAssigned -SourceVaultId $keyvault.resourceid -KeyUrl $keyId -UserAssignedIdentity $userAssignedIdentities -EncryptionType $encryptionType
-        write-host "- creating new disk encryption set:" $desname -ForegroundColor Yellow
+        write-host "- creating new disk encryption set:" -NoNewline -ForegroundColor Yellow
+        write-host $desname -ForegroundColor Cyan
         $diskEncryptionSet = New-AzDiskEncryptionSet -ResourceGroupName $resgrp -Name $desname -InputObject $diskEncryptionSetConfig
         Write-Host "Disk Encryption Set created" -ForegroundColor Green
         $diskEncryptionSetID=$diskEncryptionSet.id
@@ -170,21 +202,54 @@ Function ValidateHSMRoles($akvname,$ownername){
         New-AzKeyVaultRoleAssignment -HsmName $akvname -RoleName "Managed HSM Crypto User" -SignInName $ownername -scope /keys
         }
 }
-Function ValidateKey($akvname,$Type,$ownername, $keyname){
-    #Function validates if a key exists, if not, it will create one (if we have permissions) function returns the key object
-
-    #creating a new managed user identity to access the key - this way each disk encryption set will have its own identity
-    
+Function ValidateKeyVaultAccess($akvname,$ownername, $resgrp){
+    $keyvault=Get-AzKeyVault -Name $akvname
+    $RBAC=$keyvault.EnableRbacAuthorization
+    if ($RBAC -eq $false){
+        write-host " validating access to keys for " -NoNewline
+        write-host "$ownername" -NoNewline -ForegroundColor Cyan
+        $UserID=(Get-AzADUser -UserPrincipalName $ownername).Id
+        $AccessPolicies=$keyvault.AccessPolicies
+        [array]$UserPolicies=$AccessPolicies | where {$_.ObjectID -match $UserID}
+        If ($UserPolicies.PermissionsToKeys -contains "all"){
+            write-host " - has access to all keys" -ForegroundColor Green
+        }else{
+            write-host " - does not have access to trying to grant" -ForegroundColor Red
+            $confirmation=read-host "Press CTLR-C to cancel"
+        }
+        [array]$CVMOrg=$AccessPolicies | where {$_.displayName -match "Confidential VM Orchestrator"}
+        write-host " validating access to keys for " -NoNewline
+        write-host " Confidential VM Orchestrator" -NoNewline -ForegroundColor Cyan
+        If ($CVMOrg.PermissionsToKeys -contains "get" -and $CVMOrg.PermissionsToKeys -contains "release"){
+            write-host " - has " -NoNewline
+            write-host "get-release" -ForegroundColor Green -NoNewline
+            write-host " access to all keys"
+        }else{
+            write-host " - granting access" -ForegroundColor Yellow
+            $cvmAgent = Get-AzADServicePrincipal -ApplicationId 'bf7b6499-ff71-4aa2-97a4-f372087be7f0';
+            $newPolicy=Set-AzKeyVaultAccessPolicy -VaultName $akvname -ResourceGroupName $resgrp -ObjectId $cvmAgent.id -PermissionsToKeys get,release;
+        }
+    }else{
+        #need to implement RBAC mode   
+        write-host "RBAC mode is ON"
+    }
+}
+Function ValidateKey($akvname,$Type,$ownername, $keyname, $resgrp){
+    #Function validates if a key exists, if not, it will create one (if we have permissions) function returns the key object    
     if($Type -eq "KeyVault"){
-    #Standard KeyVault entries to be made
-
+        Write-Host "KeyVault " -ForegroundColor Green -NoNewline
+        #Standard KeyVault entries to be made
+        ValidateKeyVaultAccess -akvname $akvname -ownername $ownername -resgrp $resgrp
+        $key=Get-AzKeyVaultKey -VaultName $akvname -Name $keyname -ErrorAction SilentlyContinue
     }elseif($Type -eq "MHSM"){
-    #validating access to the keys in managed HSM
-    #ValidateHSMRoles -akvname $akvname -ownername $ownername
-    ValidateHSMRoles2 -akvname $akvname -identity $ownername -role "Managed HSM Crypto User" -scope /keys
+        #validating access to the keys in managed HSM
+        Write-Host "ManagedHSM " -ForegroundColor Green -NoNewline
+        ValidateHSMRoles2 -akvname $akvname -identity $ownername -role "Managed HSM Crypto User" -scope /keys
+        $key=Get-AzKeyVaultKey -HsmName $akvname -Name $keyname -ErrorAction SilentlyContinue
+    }
 
     #validating if a key already exists
-    if ($key=Get-AzKeyVaultKey -HsmName $akvname -Name $keyname) {
+    if ($key) {
         Write-Host "Key exists - " -ForegroundColor Green -NoNewline
         Write-host "validating" -noNewLine
         if ($key.ReleasePolicy.PolicyContent){
@@ -199,18 +264,19 @@ Function ValidateKey($akvname,$Type,$ownername, $keyname){
     }else{
         #generate new key
         write-host "- creating new key: "  -ForegroundColor Yellow -NoNewline
-        $key=Add-AzKeyVaultKey -HsmName $akvname -Name $keyname -KeyType RSA -Size 3072 -Exportable -ReleasePolicyPath C:\Scripts\MHSM\release.json 
+        $path=((get-location).path + "\")
+        if($Type -eq "KeyVault"){
+            $key=Add-AzKeyVaultKey -VaultName $akvname -Name $KeyName -Size 3072 -KeyOps wrapKey,unwrapKey -KeyType RSA -Destination HSM -Exportable -UseDefaultCVMPolicy;
+        }elseif($Type -eq "KeyVault"){
+            $key=Add-AzKeyVaultKey -HsmName $akvname -Name $keyname -KeyType RSA -Size 3072 -Exportable -ReleasePolicyPath ($path + "release.json")
+        }
         return $key
     }
-
-   }else{
-         Write-Output "Invalid vault"
-   }
 }
 
 Function ValidateVNET($vnetname, $subnetName, $region, $resgrp){
     #Validates if a network exists, else it will create one and return the subnet ID
-    Write-host "Validating" -NoNewline
+    Write-host "Validating VNET" -NoNewline
     $vnet = Get-AzVirtualNetwork -Name ($vnetname)
     If (!($Vnet)){
         Write-host " - creating vnet ($vnetname) with 10.0.0.0/24 and subnet ($subnetName) 10.0.0.0/26" -ForegroundColor Yellow
@@ -288,7 +354,18 @@ Function GenerateCreds(){
     $cred = New-Object System.Management.Automation.PSCredential ($vmusername, $securePassword);
     return $cred
 }
+Function ValidateResourceGroup($resgrp, $region){
+    #Function to validate if a resource group exists, if not, it will create one
+    $rg=Get-AzResourceGroup -Name $resgrp -ErrorAction SilentlyContinue
+    If ($rg){
+        Write-Host "ok" -ForegroundColor Green
+    }else{
+        Write-Host "creating" -ForegroundColor Yellow
+        $rg=New-AzResourceGroup -Name $resgrp -Location $region | out-null
+    }
+    return $rg
 
+}
 Function ValidateCVMOperator(){
     #need to validate if the Confidential VM Orchestrator exists
     $org=Get-AzADServicePrincipal -DisplayName "Confidential VM Orchestrator"
