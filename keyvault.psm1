@@ -165,7 +165,7 @@ Function CreateDiskEncryptionSet($keyName,$KeyID,$region,$resgrp,$desname, $akvn
         $userAssignedIdentities = @{$identity.id = @{}};
         write-host "- creating new disk encryption set config"
         $diskEncryptionSetConfig=New-AzDiskEncryptionSetConfig -Location $region -IdentityType UserAssigned -SourceVaultId $keyvault.resourceid -KeyUrl $keyId -UserAssignedIdentity $userAssignedIdentities -EncryptionType $encryptionType
-        write-host "- creating new disk encryption set:" -NoNewline -ForegroundColor Yellow
+        write-host "- creating new disk encryption set " -NoNewline -ForegroundColor Yellow
         write-host $desname -ForegroundColor Cyan
         $diskEncryptionSet = New-AzDiskEncryptionSet -ResourceGroupName $resgrp -Name $desname -InputObject $diskEncryptionSetConfig
         Write-Host "Disk Encryption Set created" -ForegroundColor Green
@@ -206,7 +206,7 @@ Function ValidateKeyVaultAccess($akvname,$ownername, $resgrp){
     $keyvault=Get-AzKeyVault -Name $akvname
     $RBAC=$keyvault.EnableRbacAuthorization
     if ($RBAC -eq $false){
-        write-host " validating access to keys for " -NoNewline
+        write-host " validating access to vault for " -NoNewline
         write-host "$ownername" -NoNewline -ForegroundColor Cyan
         $UserID=(Get-AzADUser -UserPrincipalName $ownername).Id
         $AccessPolicies=$keyvault.AccessPolicies
@@ -218,7 +218,7 @@ Function ValidateKeyVaultAccess($akvname,$ownername, $resgrp){
             $confirmation=read-host "Press CTLR-C to cancel"
         }
         [array]$CVMOrg=$AccessPolicies | where {$_.displayName -match "Confidential VM Orchestrator"}
-        write-host " validating access to keys for " -NoNewline
+        write-host " validating access to vault for " -NoNewline
         write-host " Confidential VM Orchestrator" -NoNewline -ForegroundColor Cyan
         If ($CVMOrg.PermissionsToKeys -contains "get" -and $CVMOrg.PermissionsToKeys -contains "release"){
             write-host " - has " -NoNewline
@@ -237,13 +237,13 @@ Function ValidateKeyVaultAccess($akvname,$ownername, $resgrp){
 Function ValidateKey($akvname,$Type,$ownername, $keyname, $resgrp){
     #Function validates if a key exists, if not, it will create one (if we have permissions) function returns the key object    
     if($Type -eq "KeyVault"){
-        Write-Host "KeyVault " -ForegroundColor Green -NoNewline
+        Write-Host "KeyVault " -ForegroundColor Green
         #Standard KeyVault entries to be made
         ValidateKeyVaultAccess -akvname $akvname -ownername $ownername -resgrp $resgrp
         $key=Get-AzKeyVaultKey -VaultName $akvname -Name $keyname -ErrorAction SilentlyContinue
     }elseif($Type -eq "MHSM"){
         #validating access to the keys in managed HSM
-        Write-Host "ManagedHSM " -ForegroundColor Green -NoNewline
+        Write-Host "ManagedHSM " -ForegroundColor Green
         ValidateHSMRoles2 -akvname $akvname -identity $ownername -role "Managed HSM Crypto User" -scope /keys
         $key=Get-AzKeyVaultKey -HsmName $akvname -Name $keyname -ErrorAction SilentlyContinue
     }
@@ -263,11 +263,13 @@ Function ValidateKey($akvname,$Type,$ownername, $keyname, $resgrp){
         return $key
     }else{
         #generate new key
-        write-host "- creating new key: "  -ForegroundColor Yellow -NoNewline
+        write-host "- creating new key in "  -ForegroundColor Yellow -NoNewline
         $path=((get-location).path + "\")
         if($Type -eq "KeyVault"){
+            write-host " $akvname :"  -ForegroundColor Green -NoNewline
             $key=Add-AzKeyVaultKey -VaultName $akvname -Name $KeyName -Size 3072 -KeyOps wrapKey,unwrapKey -KeyType RSA -Destination HSM -Exportable -UseDefaultCVMPolicy;
         }elseif($Type -eq "KeyVault"){
+            write-host " $akvname :"  -ForegroundColor Green -NoNewline
             $key=Add-AzKeyVaultKey -HsmName $akvname -Name $keyname -KeyType RSA -Size 3072 -Exportable -ReleasePolicyPath ($path + "release.json")
         }
         return $key
