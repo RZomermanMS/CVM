@@ -174,11 +174,40 @@ $ownername = $tmp.Account.Id
  
 
         Write-Host "Creating VM Config"
-        Write-Host "- VMName, VMSize, " -NoNewline
+        if ($PSBoundParameters.ContainsKey("VMName")) {
+            Write-Host "- VMName" -NoNewline -ForegroundColor Cyan
+        } else {
+            Write-Host "- VMName" -NoNewline
+        }
+        if ($PSBoundParameters.ContainsKey("VMName")) {
+            Write-Host ", VMSize" -NoNewline -ForegroundColor Cyan
+        } else {
+            Write-Host ", VMSize" -NoNewline
+        }
+        #Write-Host "- VMName, VMSize, " -NoNewline
         $VirtualMachine = New-AzVMConfig -VMName $VMName -VMSize $vmSize;
-        Write-Host "Operating System, Credentials, Updates" -NoNewline
+
+
+        if ($PSBoundParameters.ContainsKey("Offer")) {
+            Write-Host ", Operating System" -NoNewline -ForegroundColor Cyan
+        } else {
+            Write-Host ", Operating System" -NoNewline
+        }
+        if ($PSBoundParameters.ContainsKey("Creds")) {
+            Write-Host ", Credentials" -NoNewline -ForegroundColor Cyan
+        } else {
+            Write-Host ", Credentials" -NoNewline
+        }
+        Write-Host ", Updates" -NoNewline
+
+        #Write-Host "Operating System, Credentials, Updates" -NoNewline
         $VirtualMachine = Set-AzVMOperatingSystem -VM $VirtualMachine -Windows -ComputerName $vmname -Credential $creds -ProvisionVMAgent -EnableAutoUpdate;
-        Write-Host ", Source Image" -NoNewline
+        if ($PSBoundParameters.ContainsKey("Skus")) {
+            Write-Host ", Source Image" -NoNewline -ForegroundColor Cyan
+        } else {
+            Write-Host ", Source Image" -NoNewline
+        }
+        #Write-Host ", Source Image" -NoNewline
         $VirtualMachine = Set-AzVMSourceImage -VM $VirtualMachine -PublisherName $PublisherName -Offer $Offer -Skus $Skus -Version $Version;
         Write-Host ", NIC" -NoNewline
         $VirtualMachine = Add-AzVMNetworkInterface -VM $VirtualMachine -Id $nicId;
@@ -186,8 +215,8 @@ $ownername = $tmp.Account.Id
         $VirtualMachine = Set-AzVMOSDisk -VM $VirtualMachine -StorageAccountType "StandardSSD_LRS" -CreateOption "FromImage" -SecurityEncryptionType $secureEncryptGuestState -SecureVMDiskEncryptionSet $diskencset.id;
         Write-Host ", Security Profile" -NoNewline
         If ($DataDiskSize){
-            Write-Host ", Data Drive" -NoNewline
-            $VirtualMachine = Add-AzVMDataDisk -VM $VirtualMachine -Name "datadisk" -DiskSizeInGB $DataDiskSize -CreateOption Empty -Caching ReadWrite -StorageAccountType StandardSSD_LRS -lun 0;
+            Write-Host ", Data Drive" -NoNewline -ForegroundColor Cyan
+            $VirtualMachine = Add-AzVMDataDisk -VM $VirtualMachine -Name ($VMName + "-datadisk") -DiskSizeInGB $DataDiskSize -CreateOption Empty -Caching ReadWrite -StorageAccountType StandardSSD_LRS -lun 0;
         }
         $VirtualMachine = Set-AzVmSecurityProfile -VM $VirtualMachine -SecurityType $vmSecurityType;
         Write-Host ", Secure Boot" -NoNewline
