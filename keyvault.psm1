@@ -268,7 +268,7 @@ Function ValidateKey($akvname,$Type,$ownername, $keyname, $resgrp){
         if($Type -eq "KeyVault"){
             write-host " $akvname :"  -ForegroundColor Green -NoNewline
             $key=Add-AzKeyVaultKey -VaultName $akvname -Name $KeyName -Size 3072 -KeyOps wrapKey,unwrapKey -KeyType RSA -Destination HSM -Exportable -UseDefaultCVMPolicy;
-        }elseif($Type -eq "KeyVault"){
+        }elseif($Type -eq "MHSM"){
             write-host " $akvname :"  -ForegroundColor Green -NoNewline
             $key=Add-AzKeyVaultKey -HsmName $akvname -Name $keyname -KeyType RSA -Size 3072 -Exportable -ReleasePolicyPath ($path + "release.json")
         }
