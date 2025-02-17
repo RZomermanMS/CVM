@@ -27,10 +27,17 @@ If ($Type -eq "KeyVault"){
                 return $keyvault
             }
         } else {
-            Write-Host " KeyVault does not yet exist, " -NoNewline
-            write-Host "creating" -ForegroundColor Yellow
-            $keyvault=New-AzKeyVault -Name $akvname -Location $region -ResourceGroupName $resgrp -Sku Premium -EnabledForDiskEncryption -DisableRbacAuthorization -SoftDeleteRetentionInDays 10 -EnablePurgeProtection;
-            return $keyvault
+            Write-Host "Validating for Managed HSM " -NoNewline -ForegroundColor Blue
+            $result = Resolve-DnsName ($akvname + ".managedhsm.azure.net") -ErrorAction SilentlyContinue
+            if ($result){
+                Write-Host "- found - please add -akvtype 'MHSM' or change the name of the keyvault" -foregroundcolor Red
+                $confirmation = Read-Host "Press CTRL-C to cancel this script"
+            }else{
+                Write-Host " KeyVault does not yet exist, " -NoNewline
+                write-Host "creating" -ForegroundColor Yellow
+                $keyvault=New-AzKeyVault -Name $akvname -Location $region -ResourceGroupName $resgrp -Sku Premium -EnabledForDiskEncryption -DisableRbacAuthorization -SoftDeleteRetentionInDays 10 -EnablePurgeProtection;
+                return $keyvault
+            }
         }
 }elseif($Type -eq "MHSM"){
     # Try to resolve the hostname
