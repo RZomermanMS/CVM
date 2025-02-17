@@ -11,10 +11,17 @@ param (
     [Parameter(Mandatory = $False)]$keyName,
     [Parameter(Mandatory = $False)][ValidateSet("MHSM", "KeyVault")][string]$akvtype = "KeyVault",
     [Parameter(Mandatory = $False)]$resgrp,
+    [Parameter(Mandatory = $False)]$desname,
     [Parameter(Mandatory = $False)]$vmname
 )  
 
-
+# Validate that both parameters are either specified together or omitted together
+if (($VNETName -and -not $VMSubnetName) -or ($VMSubnetName -and -not $VNETName)) {
+    write-host "When specifying VNET or VMSubnet, both must be specified" -ForegroundColor Red
+    return
+    $command=read-host "Press CRTL-C to exit" 
+    
+}
 #setting up the build
 $basename = $basename + -join ((97..122) | Get-Random -Count 5 | % {[char]$_}) # basename + 5 random lower-case letters
 If (!($vmname)){$vmname = $basename} # name of the VM, copied from $basename, or customise it here
@@ -95,10 +102,10 @@ $ownername = $tmp.Account.Id
         }
         
         
-        write-host "  - Credentials:" -ForegroundColor "Blue"
+        write-host "  - Credentials:" -ForegroundColor "Blue" -NoNewline
         If ($Creds) {
             #validate that creds are correctly specified
-        
+            Write-host "   - supplied"  -ForegroundColor Blue 
             Write-host "   - Username:"  -ForegroundColor Blue -NoNewline
             write-host $creds.username -ForegroundColor Cyan
             write-host "   - Password:" -NoNewline -ForegroundColor "Blue"
@@ -108,7 +115,7 @@ $ownername = $tmp.Account.Id
                 Read-Host -Prompt "Press CRTL-X to exit"
             }
         }else{
-            Write-Host "  - not specified, generating"  -ForegroundColor Yellow
+            Write-Host "   - not specified, generating"  -ForegroundColor Yellow
             $creds=GenerateCreds
         }
         
@@ -118,7 +125,9 @@ $ownername = $tmp.Account.Id
 #Actual Script Logica
 #validate if an existing VM exists
     If (get-azvm -Name $vmname){
-        Write-Output "VM already exists"
+        Write-Host "VM already exists" -foregroundcolor red
+        write-host ""
+        write-host ""
     }else{
         write-host "CVM Operator AppID check: " -ForegroundColor Blue -NoNewline
         If (ValidateCVMOperator){
