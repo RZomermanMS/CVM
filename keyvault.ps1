@@ -9,7 +9,7 @@ param (
     [Parameter(Mandatory = $False)]$KeyURL,
     [Parameter(Mandatory = $False)]$akvname,
     [Parameter(Mandatory = $False)]$keyName,
-    [Parameter(Mandatory = $False)][ValidateSet("MHSM", "KeyVault")][string]$akvtype,
+    [Parameter(Mandatory = $False)][ValidateSet("MHSM", "KeyVault")][string]$akvtype = "KeyVault",
     [Parameter(Mandatory = $False)]$resgrp,
     [Parameter(Mandatory = $False)]$vmname
 )  
@@ -46,6 +46,11 @@ If ($KeyURL){
 }
 
 
+#Loading PSM1 module
+If (Get-Module -Name KeyVault){
+    Remove-Module -Name KeyVault
+}
+Import-Module -Name .\KeyVault.psm1
 
 $vmSecurityType = "ConfidentialVM";
 $diskEncryptionType = "ConfidentialVmEncryptedWithCustomerKey";
@@ -115,27 +120,27 @@ $ownername = $tmp.Account.Id
     If (get-azvm -Name $vmname){
         Write-Output "VM already exists"
     }else{
-        if(!($KeyURL)){
-            $KeyVault=CreateKeyVault -Type $akvtype -akvname $akvname -region $region -resgrp $resgrp -ownername $ownername
-        }
-
         write-host "CVM Operator AppID check: " -ForegroundColor Blue -NoNewline
         If (ValidateCVMOperator){
             write-host "ok" -ForegroundColor Green
         }
-        #write-host "-akvname $akvname"
-        #write-host "-Type $akvtype "
-        #write-host "-ownername $ownername "
-        #write-host "-keyname $keyname"
+        write-host "ResourceGroup check: "-ForegroundColor Blue -NoNewline
+        ValidateResourceGroup -resgrp $resgrp -region $region
+
+        if(!($KeyURL)){
+            $KeyVault=ValidateKeyVault -Type $akvtype -akvname $akvname -region $region -resgrp $resgrp -ownername $ownername
+        }
+
         write-host "KeyVault access " -NoNewline -ForegroundColor Blue
-        $key=ValidateKey -akvname $akvname -Type $akvtype -ownername $ownername -keyname $keyname;
+        $key=ValidateKey -akvname $akvname -Type $akvtype -ownername $ownername -keyname $keyname -resgrp $resgrp;
         if ($key.id){
             write-host $key.id -ForegroundColor Cyan
         }else {
             Read-Host -Prompt "Press CRTL-X to exit"
         }
         $keyID=$key.id
-        $diskencset=CreateDiskEncryptionSet -keyId $keyId -KeyName $keyName -region $region -resgrp $resgrp -desname $desname -akvname $akvname -EncryptionType $diskEncryptionType;
+
+        $diskencset=CreateDiskEncryptionSet -keyId $keyId -KeyName $keyName -region $region -resgrp $resgrp -desname $desname -akvname $akvname -EncryptionType $diskEncryptionType -Type $akvtype;
         $SubnetID=ValidateVNET -vnetname $vnetname -subnetName $vmsubnetname -region $region -resgrp $resgrp;
         write-host "subnetID:" -ForegroundColor Blue -NoNewline
         write-host $subnetID -ForegroundColor Cyan
