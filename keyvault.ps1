@@ -12,7 +12,12 @@ param (
     [Parameter(Mandatory = $False)][ValidateSet("MHSM", "KeyVault")][string]$akvtype = "KeyVault",
     [Parameter(Mandatory = $False)]$resgrp,
     [Parameter(Mandatory = $False)]$desname,
-    [Parameter(Mandatory = $False)]$vmname
+    [Parameter(Mandatory = $False)]$vmname,
+    [Parameter(Mandatory = $False)]$PublisherName='MicrosoftWindowsServer',
+    [Parameter(Mandatory = $False)]$Offer='windowsserver',
+    [Parameter(Mandatory = $False)]$Skus='2022-datacenter-smalldisk-g2',
+    [Parameter(Mandatory = $False)]$Version="latest",
+    [Parameter(Mandatory = $False)]$DataDiskSize
 )  
 
 # Validate that both parameters are either specified together or omitted together
@@ -119,9 +124,17 @@ $ownername = $tmp.Account.Id
             $creds=GenerateCreds
         }
         
+        write-host "  - Publisher:" -NoNewline -ForegroundColor "Blue"
+        write-host $PublisherName -ForegroundColor "Cyan"
+        write-host "  - Offer:" -NoNewline -ForegroundColor "Blue"
+        write-host $Offer -ForegroundColor "Cyan"
+        write-host "  - Source:" -NoNewline -ForegroundColor "Blue"
+        write-host $Skus -ForegroundColor "Cyan"
+        write-host "  - Version:" -NoNewline -ForegroundColor "Blue"
+        write-host $Version -ForegroundColor "Cyan"
+    
         write-host ""
         write-host ""
-
 #Actual Script Logica
 #validate if an existing VM exists
     If (get-azvm -Name $vmname){
@@ -134,7 +147,7 @@ $ownername = $tmp.Account.Id
             write-host "ok" -ForegroundColor Green
         }
         write-host "ResourceGroup check: "-ForegroundColor Blue -NoNewline
-        ValidateResourceGroup -resgrp $resgrp -region $region
+        $check=ValidateResourceGroup -resgrp $resgrp -region $region
 
         if(!($KeyURL)){
             $KeyVault=ValidateKeyVault -Type $akvtype -akvname $akvname -region $region -resgrp $resgrp -ownername $ownername
@@ -166,12 +179,16 @@ $ownername = $tmp.Account.Id
         Write-Host "Operating System, Credentials, Updates" -NoNewline
         $VirtualMachine = Set-AzVMOperatingSystem -VM $VirtualMachine -Windows -ComputerName $vmname -Credential $creds -ProvisionVMAgent -EnableAutoUpdate;
         Write-Host ", Source Image" -NoNewline
-        $VirtualMachine = Set-AzVMSourceImage -VM $VirtualMachine -PublisherName 'MicrosoftWindowsServer' -Offer 'windowsserver' -Skus '2022-datacenter-smalldisk-g2' -Version "latest";
+        $VirtualMachine = Set-AzVMSourceImage -VM $VirtualMachine -PublisherName $PublisherName -Offer $Offer -Skus $Skus -Version $Version;
         Write-Host ", NIC" -NoNewline
         $VirtualMachine = Add-AzVMNetworkInterface -VM $VirtualMachine -Id $nicId;
         Write-Host ", OS Disk" -NoNewline
         $VirtualMachine = Set-AzVMOSDisk -VM $VirtualMachine -StorageAccountType "StandardSSD_LRS" -CreateOption "FromImage" -SecurityEncryptionType $secureEncryptGuestState -SecureVMDiskEncryptionSet $diskencset.id;
         Write-Host ", Security Profile" -NoNewline
+        If ($DataDiskSize){
+            Write-Host ", Data Drive" -NoNewline
+            $VirtualMachine = Add-AzVMDataDisk -VM $VirtualMachine -Name "datadisk" -DiskSizeInGB $DataDiskSize -CreateOption Empty -Caching ReadWrite -StorageAccountType StandardSSD_LRS -lun 0;
+        }
         $VirtualMachine = Set-AzVmSecurityProfile -VM $VirtualMachine -SecurityType $vmSecurityType;
         Write-Host ", Secure Boot" -NoNewline
         $VirtualMachine = Set-AzVmUefi -VM $VirtualMachine -EnableVtpm $true -EnableSecureBoot $true;
@@ -179,6 +196,16 @@ $ownername = $tmp.Account.Id
         #$VirtualMachine = Set-AzVMBootDiagnostic -VM $VirtualMachine -disable #disable boot diagnostics, you can re-enable if required
 
         Write-Host "Building VM" -ForegroundColor Green
-        New-AzVM -ResourceGroupName $resgrp -Location $region -Vm $VirtualMachine
+        $NewVM=New-AzVM -ResourceGroupName $resgrp -Location $region -Vm $VirtualMachine
         #$vm = Get-AzVm -ResourceGroupName $resgrp -Name $vmname;
+        IF ($DataDiskSize) {
+            Write-host "Enabling BitLocker on Data drive" -ForegroundColor Green
+            $path=((get-location).path + "\")
+            If (Test-Path ($path + "EnableBitLocker.ps1")) {
+                Invoke-AzVMRunCommand -ResourceGroupName $resgrp -VMName $vmname -CommandId 'RunPowerShellScript' -ScriptPath ($path + "EnableBitLocker.ps1")
+            }else{
+                Write-host "BitLocker script not found" -ForegroundColor Red
+            }
+        }
     }
+    write-host " This script deployed a CVM with all required components" -ForegroundColor "Green"
