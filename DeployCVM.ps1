@@ -59,10 +59,10 @@ If ($KeyURL){
 
 
 #Loading PSM1 module
-If (Get-Module -Name KeyVault){
-    Remove-Module -Name KeyVault
+If (Get-Module -Name DeployCVM){
+    Remove-Module -Name DeployCVM
 }
-Import-Module -Name .\KeyVault.psm1
+Import-Module -Name .\DeployCVM.psm1
 
 $vmSecurityType = "ConfidentialVM";
 $diskEncryptionType = "ConfidentialVmEncryptedWithCustomerKey";
