@@ -12,6 +12,7 @@ param (
     [Parameter(Mandatory = $False)][ValidateSet("MHSM", "KeyVault")][string]$akvtype = "KeyVault",
     [Parameter(Mandatory = $False)]$resgrp,
     [Parameter(Mandatory = $False)]$desname,
+    [Parameter(Mandatory = $False)]$zone,
     [Parameter(Mandatory = $False)]$vmname,
     [Parameter(Mandatory = $False)]$PublisherName='MicrosoftWindowsServer',
     [Parameter(Mandatory = $False)]$Offer='windowsserver',
@@ -225,7 +226,12 @@ $ownername = $tmp.Account.Id
         #$VirtualMachine = Set-AzVMBootDiagnostic -VM $VirtualMachine -disable #disable boot diagnostics, you can re-enable if required
 
         Write-Host "Building VM" -ForegroundColor Green
-        $NewVM=New-AzVM -ResourceGroupName $resgrp -Location $region -Vm $VirtualMachine
+        
+        If ($zone){
+            $NewVM=New-AzVM -ResourceGroupName $resgrp -Location $region -Vm $VirtualMachine -zone $zone
+        }else{
+            $NewVM=New-AzVM -ResourceGroupName $resgrp -Location $region -Vm $VirtualMachine 
+        }
         #$vm = Get-AzVm -ResourceGroupName $resgrp -Name $vmname;
         IF ($DataDiskSize -and $Offer -eq 'windowsserver') {
             Write-host "Enabling BitLocker on Data drive" -ForegroundColor Green
